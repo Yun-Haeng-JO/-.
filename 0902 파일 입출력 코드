@@ -1,56 +1,53 @@
+*1. 파일이 존재하지 않을 때 파일을 만들어서 쓰는 법
 #include <stdio.h>
+int main(void)
+{
+	FILE* pFile = fopen("test.txt", "w");  //write mode
+	fprintf(pFile, "blockdmask");          //printf -> fprintf
+	fclose(pFile);
+	return 0;
+}
 
-int main(void) {
-    int numbers[15035]; // 최대 15035개의 정수를 저장할 배열
-    int temp;           // 파일에서 읽어온 값을 임시로 저장할 변수
-    int count = 0;      // 배열에 저장된 정수의 개수를 기록할 변수
-    int max, min;       // 최댓값과 최솟값을 저장할 변수
-    int sum = 0;        // 배열의 합을 저장할 변수
-    FILE* fp = fopen("C:\\Users\\user\\Desktop\\data.txt", "r"); // 파일 경로 설정
+*2. 파일이 존재할 때 다시 w 모드로 하면 어떤 식으로 될까?
+#incdlude <stdio.h>
+int main(void)
+{
+	FILE* pFile = fopen("test.txt", "w");   //wirte mode
+	fprintf(pFile, "this is blockdmask file read write example");
+	fclose(pFile);
+	return 0;
+}
 
-    // 파일 열기
-    if (fp == NULL) {
-        printf("파일을 열 수 없습니다.\n");
-        return 1;
-    }
+*3. 이미 파일은 존재하고 그 파일을 열어서 read 모드로 사용하는 방법
+#include<stdio.h>
+int main(void)
+{
+	FILE* pFile = fopen("test.txt", "r"); //read mode
+	if(pFile == NULL)
+	{        
+			//r로 읽을 때는 파일이 없을 수 있기 때문에 이렇게 널체크를 해주어야합니다.    
+			//파일이 없으면 FILE*가 NULL 입니다.      
+			//파일이 없을때 파일을 만드는 처리를 하던지 프로그램에 맞게 짜면됩니다.     
+			//여기서는 프로그램을 종료 하겠습니다.       
+			printf("파일이 없습니다. 프로그램을 종료합니다.");    
+			return 0;
+	}     
+	
+	//여기까지 와다는건 read 모드로 파일이 열린것 입니다.   
+	char str[50]; 
+	fgets(str, 50, pFile);  //파일에 있는거 읽어오기       
+	
+	fclose(pFile);          //파일 닫기  
+	printf("%s\n", str);    //터미널에 출력  
+	return 0;
+}
 
-    // 파일에서 데이터를 읽어 배열에 저장
-    while (fscanf(fp, "%d", &temp) == 1) {
-        if (count < 15035) {
-            numbers[count++] = temp;
-        } else {
-            fclose(fp); // 파일 닫기
-            printf("배열의 최대 크기를 초과했습니다.\n");
-            return 1; // 배열 초과 시 강제 종료
-        }
-    }
-
-    fclose(fp); // 파일 닫기
-
-    // 배열이 비어있는 경우 처리
-    if (count == 0) {
-        printf("파일에 유효한 데이터가 없습니다.\n");
-        return 0;
-    }
-
-    // 초기값 설정
-    max = min = numbers[0];
-
-    // 배열을 순회하며 최댓값, 최솟값, 합계 계산
-    for (int i = 0; i < count; i++) {
-        if (numbers[i] > max) {
-            max = numbers[i];
-        }
-        if (numbers[i] < min) {
-            min = numbers[i];
-        }
-        sum += numbers[i];
-    }
-
-    // 결과 출력
-    printf("최댓값: %d\n", max);
-    printf("최솟값: %d\n", min);
-    printf("배열의 합: %d\n", sum);
-
-    return 0;
+*4. 이미 파일은 존재하고 그 파일의 끝에서 부터 편집 하는 방법
+#include<stdio.h>
+int main(void)
+{   
+	FILE* pFile = fopen("test.txt", "a");   // file open. append mode.    
+	fputs("\nc 언어 file append test. by blockdmask.", pFile);    //fputs를 이용해 파일에 쓰기    
+	fclose(pFile);                          // file close.   
+	return 0;
 }

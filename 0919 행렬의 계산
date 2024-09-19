@@ -1,0 +1,49 @@
+#include <stdio.h>
+
+// 3x3 행렬 출력 함수
+void printMatrix(int matrix[3][3]) {
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            printf("%d ", matrix[i][j]);
+        }
+        printf("\n");
+    }
+}
+
+// 3x3 행렬 덧셈 함수 (참조: https://loding.tistory.com/entry/%EB%B0%B1%EC%A4%80C%EC%96%B8%EC%96%B4-2738%EB%B2%88-%ED%96%89%EB%A0%AC-%EB%8D%A7%EC%85%88)
+void addMatrices(int mat1[3][3], int mat2[3][3], int result[3][3]) {
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            result[i][j] = mat1[i][j] + mat2[i][j];
+        }
+    }
+}
+
+// 3x3 행렬 스칼라 곱 함수 (참조: https://haeinyeo.tistory.com/32)
+void scalarMultiply(int scalar, int matrix[3][3], int result[3][3]) {
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            result[i][j] = scalar * matrix[i][j];
+        }
+    }
+}
+
+int main() {
+    // 두 개의 3x3 행렬 정의
+    int mat1[3][3] = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
+    int mat2[3][3] = {{9, 8, 7}, {6, 5, 4}, {3, 2, 1}};
+    int result[3][3]; // 결과 행렬
+
+    // 행렬 덧셈
+    addMatrices(mat1, mat2, result);
+    printf("행렬 덧셈 결과:\n");
+    printMatrix(result);
+
+    // 스칼라 곱
+    int scalar = 2;
+    scalarMultiply(scalar, mat1, result);
+    printf("\n스칼라 곱 (스칼라 = %d):\n", scalar);
+    printMatrix(result);
+
+    return 0;
+}

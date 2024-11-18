@@ -1,0 +1,78 @@
+#include <stdio.h>
+
+// 구조체 선언
+struct student
+{
+	// 구조체 멤버 3개 정의
+	int number;
+	char name[10];
+	double grade;
+};
+
+int main(void)
+{
+	struct student s1 = {20241118, "kor", 4.5}; // 구조체 멤버 변수 선언과 초기화
+
+	return 0;
+} 
+
+
+---------------------
+
+#include <stdio.h>
+#include <string.h>
+
+// 구조체선언 & 구조체 변수 선언
+struct student
+{
+	// 구조체 멤버 3개 정의
+	int number;
+	char name[10];
+	double grade;
+}
+s1;
+
+int main(void)
+{
+	// 구조체 멤버 참조
+	s1.number = 20241118;
+	strcpy_s(s1.name, 10, "kor");
+	s1.grade = 4.5;
+	
+	return 0;
+}
+
+
+
+
+---------------------
+
+#include <stdio.h>
+#include <string.h>
+
+// 구조체선언
+struct student
+{
+	// 구조체 멤버
+	int number;
+	char name[10];
+	double grade;
+}
+s1;
+
+int main(void)
+{
+	printf("학번: ");
+	scanf_s("%d", &s1.number);
+	
+	printf("이름: ");
+	scanf_s("%s", &s1.name, 10);
+	
+	printf("학점: ");
+	scanf_s("%lf", &s1.grade);
+	
+	printf("학번: %d\n 이름 : %s\n학점 : %lf\n\n",s1.number, s1.name, s1.grade);
+	
+	return 0;
+
+}

@@ -1,0 +1,92 @@
+#include <stdio.h>
+#include <string.h>
+
+int main(void) {  
+    char a[20] = "the real programmer";
+    printf("문자열의 길이: %ld\n", strlen(a));
+}
+
+-------------
+
+#include <stdio.h>
+#include <string.h>
+
+int main(void) {  
+    char a[20] = "the real programmer";
+    char b[20] = "eunjin lee";
+    printf("두 배열의 사전순 비교: %d\n", strcmp(a, b));
+}
+
+
+---------------
+
+#include <string.h>
+int strcmp(const char *string1, const char *string2);
+
+
+-------------
+
+#include <stdio.h>
+#include <string.h>
+
+int main(void) {  
+    char a[20] = "the real programmer";
+    char b[20] = "eunjin lee";
+    strcpy(a, b);
+    printf("복사된 문자열: %s \n", a);
+}
+
+
+-------------
+
+
+#include <stdio.h>
+#include <string.h>
+
+int main(void) {  
+    char a[20] = "the real programmer";
+    char b[20] = "eunjin lee";
+    strcpy(a, b);
+    printf("복사된 문자열: %s \n", a);
+}
+
+
+
+-------------
+
+
+#include <stdio.h>
+#include <string.h>
+
+int main(void) {  
+    char a[20] = "the real programmer ";
+    char b[20] = "eunjin";
+    strcat(a, b);
+    printf("합쳐진 결과 문자열: %s \n", a);
+}
+
+
+--------------
+
+
+#include <string.h>
+char *strcat(char *string1, const char *string2);
+
+
+-------------
+
+
+#include <stdio.h>
+#include <string.h>
+
+int main(void) {  
+    char a[20] = "the real programmer";
+    char b[20] = "real";
+    printf("찾은 문자열: %s \n", strstr(a, b));
+}
+
+
+------------
+
+#include <string.h>
+char *strstr(const char *string1, const char *string2);

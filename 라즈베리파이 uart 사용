@@ -1,0 +1,79 @@
+import serial
+
+ser = serial.Serial('/dev/ttyS0', 9600, timeout = 1)
+
+ser.write(b'Hello, World!')
+
+data = ser.read(15)
+print(data)
+
+ser.close()
+
+------------
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
+#include <string.h>
+
+int main() {
+    int serial_port = open("/dev/ttyS0", O_RDWR);
+    
+    if (serial_port < 0) {
+        perror("Error opening serial port");
+        return -1;
+    }
+
+    struct termios tty;
+    
+    if (tcgetattr(serial_port, &tty) != 0) {
+        perror("Error reading port settings");
+        close(serial_port);
+        return -1;
+    }
+
+    cfsetispeed(&tty, B9600);
+    cfsetospeed(&tty, B9600);
+
+    tty.c_cflag &= ~PARENB;       
+    tty.c_cflag &= ~CSTOPB;       
+    tty.c_cflag &= ~CSIZE;         
+    tty.c_cflag |= CS8;           
+    tty.c_cflag &= ~CRTSCTS;      
+    tty.c_cflag |= CREAD | CLOCAL; 
+
+    tty.c_lflag &= ~ICANON;
+    tty.c_cc[VTIME] = 10;  
+    tty.c_cc[VMIN] = 0;
+
+    if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {
+        perror("Error setting port attributes");
+        close(serial_port);
+        return -1;
+    }
+
+    char *message = "Hello, World!";
+    
+    ssize_t bytes_written = write(serial_port, message, strlen(message));
+    if (bytes_written < 0) {
+        perror("Error writing to serial port");
+        close(serial_port);
+        return -1;
+    }
+
+    char read_buffer[16] = {0};  
+    ssize_t bytes_read = read(serial_port, read_buffer, sizeof(read_buffer) - 1);
+    
+    if (bytes_read < 0) {
+        perror("Error reading from serial port");
+        close(serial_port);
+        return -1;
+    }
+
+    printf("Received: %s\n", read_buffer);
+
+    close(serial_port);
+
+    return 0;
+}

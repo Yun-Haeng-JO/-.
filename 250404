@@ -1,0 +1,453 @@
+#include<iostream>
+#include<string>
+#include<cstring>
+#include<unistd.h>
+#include<fcntl.h>
+#include<termios.h>
+#include<map>
+#include<iomanip>
+#include<vector>
+#include<sys/time.h>
+#include<thread>
+#include<atomic>
+
+class CRC16
+{
+private:
+    static const uint16_t crcTable[256];
+public:
+    static uint16_t calculate(const uint8_t*data,size_t length)
+    {
+        uint16_t crc=0xFFFF;
+        for(size_t i=0;i<length;i++)
+        {
+            uint8_t pos=(crc^data[i])&0xFF;
+            crc=(crc>>8)^crcTable[pos];
+        }
+        return crc;
+    }
+};
+
+const uint16_t CRC16::crcTable[256]={
+    0x0000,0xC0C1,0xC181,0x0140,0xC301,0x03C0,0x0280,0xC241,
+    0xC601,0x06C0,0x0780,0xC741,0x0500,0xC5C1,0xC481,0x0440,
+    0xCC01,0x0CC0,0x0D80,0xCD41,0x0F00,0xCFC1,0xCE81,0x0E40,
+    0x0A00,0xCAC1,0xCB81,0x0B40,0xC901,0x09C0,0x0880,0xC841,
+    0xD801,0x18C0,0x1980,0xD941,0x1B00,0xDBC1,0xDA81,0x1A40,
+    0x1E00,0xDEC1,0xDF81,0x1F40,0xDD01,0x1DC0,0x1C80,0xDC41,
+    0x1400,0xD4C1,0xD581,0x1540,0xD701,0x17C0,0x1680,0xD641,
+    0xD201,0x12C0,0x1380,0xD341,0x1100,0xD1C1,0xD081,0x1040,
+    0xF001,0x30C0,0x3180,0xF141,0x3300,0xF3C1,0xF281,0x3240,
+    0x3600,0xF6C1,0xF781,0x3740,0xF501,0x35C0,0x3480,0xF441,
+    0x3C00,0xFCC1,0xFD81,0x3D40,0xFF01,0x3FC0,0x3E80,0xFE41,
+    0xFA01,0x3AC0,0x3B80,0xFB41,0x3900,0xF9C1,0xF881,0x3840,
+    0x2800,0xE8C1,0xE981,0x2940,0xEB01,0x2BC0,0x2A80,0xEA41,
+    0xEE01,0x2EC0,0x2F80,0xEF41,0x2D00,0xEDC1,0xEC81,0x2C40,
+    0xE401,0x24C0,0x2580,0xE541,0x2700,0xE7C1,0xE681,0x2640,
+    0x2200,0xE2C1,0xE381,0x2340,0xE101,0x21C0,0x2080,0xE041,
+    0xA001,0x60C0,0x6180,0xA141,0x6300,0xA3C1,0xA281,0x6240,
+    0x6600,0xA6C1,0xA781,0x6740,0xA501,0x65C0,0x6480,0xA441,
+    0x6C00,0xACC1,0xAD81,0x6D40,0xAF01,0x6FC0,0x6E80,0xAE41,
+    0xAA01,0x6AC0,0x6B80,0xAB41,0x6900,0xA9C1,0xA881,0x6840,
+    0x7800,0xB8C1,0xB981,0x7940,0xBB01,0x7BC0,0x7A80,0xBA41,
+    0xBE01,0x7EC0,0x7F80,0xBF41,0x7D00,0xBDC1,0xBC81,0x7C40,
+    0xB401,0x74C0,0x7580,0xB541,0x7700,0xB7C1,0xB681,0x7640,
+    0x7200,0xB2C1,0xB381,0x7340,0xB101,0x71C0,0x7080,0xB041,
+    0x5000,0x90C1,0x9181,0x5140,0x9301,0x53C0,0x5280,0x9241,
+    0x9601,0x56C0,0x5780,0x9741,0x5500,0x95C1,0x9481,0x5440,
+    0x9C01,0x5CC0,0x5D80,0x9D41,0x5F00,0x9FC1,0x9E81,0x5E40,
+    0x5A00,0x9AC1,0x9B81,0x5B40,0x9901,0x59C0,0x5880,0x9841,
+    0x8801,0x48C0,0x4980,0x8941,0x4B00,0x8BC1,0x8A81,0x4A40,
+    0x4E00,0x8EC1,0x8F81,0x4F40,0x8D01,0x4DC0,0x4C80,0x8C41,
+    0x4400,0x84C1,0x8581,0x4540,0x8701,0x47C0,0x4680,0x8641,
+    0x8201,0x42C0,0x4380,0x8341,0x4100,0x81C1,0x8081,0x4040
+};
+
+void wait_for_milliseconds(long wait_ms)
+{
+    struct timeval start_time,current_time;
+    long elapsed_ms=0;
+    gettimeofday(&start_time,NULL);
+    while(elapsed_ms<wait_ms)
+    {
+        gettimeofday(&current_time,NULL);
+        elapsed_ms=(current_time.tv_sec-start_time.tv_sec)*1000+
+                   (current_time.tv_usec-start_time.tv_usec)/1000;
+        usleep(1000);
+    }
+}
+
+class CDAQ1522
+{
+private:
+    int serialFd;
+    uint8_t slaveAddress;
+    std::map<float,uint16_t>voltToHex;
+    std::atomic<bool>cmdInProgress;
+    std::thread responseThread;
+    std::atomic<bool>running;
+
+    void responseHandler()
+    {
+        while(running)
+        {
+            if(cmdInProgress)
+            {
+                std::vector<uint8_t>response=readResponse(5);
+                if(!response.empty())
+                {
+                    if(response[1]==0x10)parseSetVoltResp(response);
+                    else if(response[1]==0x04)parseReadVoltResp(response);
+                    cmdInProgress=false;
+                }
+            }
+            usleep(10000);
+        }
+    }
+
+public:
+    CDAQ1522(const std::string&serialPort,uint8_t address):slaveAddress(address),serialFd(-1),cmdInProgress(false),running(true)
+    {
+        voltToHex={{-10.4f,0x0FFF},{-10.0f,0x0FB0},{-9.0f,0x0EEB},{-8.0f,0x0E26},
+                   {-7.0f,0x0D61},{-6.0f,0x0C9C},{-5.0f,0x0BD8},{-4.0f,0x0B13},
+                   {-3.0f,0x0A4E},{-2.0f,0x0989},{-1.0f,0x08C4},{0.0f,0x0800},
+                   {1.0f,0x00C5},{2.0f,0x018A},{3.0f,0x024F},{4.0f,0x0314},
+                   {5.0f,0x03D9},{6.0f,0x049E},{7.0f,0x0562},{8.0f,0x0627},
+                   {9.0f,0x06EC},{10.0f,0x07B1},{10.4f,0x07FF}};
+
+        serialFd=open(serialPort.c_str(),O_RDWR|O_NOCTTY);
+        if(serialFd<0)
+        {
+            std::cerr<<"cant open serial port:"<<serialPort<<std::endl;
+            return;
+        }
+
+        struct termios tty;
+        memset(&tty,0,sizeof(tty));
+        if(tcgetattr(serialFd,&tty)!=0)
+        {
+            std::cerr<<"tcgetattr error"<<std::endl;
+            close(serialFd);
+            serialFd=-1;
+            return;
+        }
+
+        cfsetospeed(&tty,B9600);
+        cfsetispeed(&tty,B9600);
+        tty.c_cflag&=~PARENB;
+        tty.c_cflag&=~CSTOPB;
+        tty.c_cflag&=~CSIZE;
+        tty.c_cflag|=CS8;
+        tty.c_cflag&=~CRTSCTS;
+        tty.c_cflag|=CREAD|CLOCAL;
+
+        tty.c_lflag&=~ICANON;
+        tty.c_lflag&=~ECHO;
+        tty.c_lflag&=~ECHOE;
+        tty.c_lflag&=~ECHONL;
+        tty.c_lflag&=~ISIG;
+
+        tty.c_iflag&=~(IXON|IXOFF|IXANY);
+        tty.c_iflag&=~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
+
+        tty.c_oflag&=~OPOST;
+        tty.c_oflag&=~ONLCR;
+
+        tty.c_cc[VMIN]=0;
+        tty.c_cc[VTIME]=50;
+
+        if(tcsetattr(serialFd,TCSANOW,&tty)!=0)
+        {
+            std::cerr<<"tcsetattr error"<<std::endl;
+            close(serialFd);
+            serialFd=-1;
+            return;
+        }
+
+        tcflush(serialFd,TCIOFLUSH);
+        responseThread=std::thread(&CDAQ1522::responseHandler,this);
+    }
+
+    ~CDAQ1522()
+    {
+        running=false;
+        if(responseThread.joinable())responseThread.join();
+        if(serialFd>=0)close(serialFd);
+    }
+
+    bool isConnected()const
+    {
+        return serialFd>=0;
+    }
+
+    bool isCmdInProgress()const
+    {
+        return cmdInProgress;
+    }
+
+    uint16_t findClosestVoltHex(float voltage)
+    {
+        float closest=-10.4f;
+        float minDiff=std::abs(voltage-closest);
+        for(const auto&pair:voltToHex)
+        {
+            float diff=std::abs(voltage-pair.first);
+            if(diff<minDiff)
+            {
+                minDiff=diff;
+                closest=pair.first;
+            }
+        }
+        return voltToHex[closest];
+    }
+
+    std::vector<uint8_t>createSetVoltCmd(float voltage)
+    {
+        uint16_t voltHex=findClosestVoltHex(voltage);
+        std::vector<uint8_t>cmd={slaveAddress,0x10,0x05,0x00,0x00,0x01,0x02,
+                                 static_cast<uint8_t>((voltHex>>8)&0xFF),
+                                 static_cast<uint8_t>(voltHex&0xFF)};
+        uint16_t crc=CRC16::calculate(cmd.data(),cmd.size());
+        cmd.push_back(crc&0xFF);
+        cmd.push_back((crc>>8)&0xFF);
+        return cmd;
+    }
+
+    std::vector<uint8_t>createReadVoltCmd()
+    {
+        std::vector<uint8_t>cmd={slaveAddress,0x04,0x05,0x00,0x00,0x01};
+        uint16_t crc=CRC16::calculate(cmd.data(),cmd.size());
+        cmd.push_back(crc&0xFF);
+        cmd.push_back((crc>>8)&0xFF);
+        return cmd;
+    }
+
+    bool sendCmd(const std::vector<uint8_t>&cmd)
+    {
+        if(!isConnected())
+        {
+            std::cerr<<"serial port not connected"<<std::endl;
+            return false;
+        }
+        if(cmdInProgress)
+        {
+            std::cout<<"waiting for previous cmd to finish...\n";
+            while(cmdInProgress)usleep(10000);
+        }
+        ssize_t bytesWritten=write(serialFd,cmd.data(),cmd.size());
+        if(bytesWritten!=static_cast<ssize_t>(cmd.size()))
+        {
+            std::cerr<<"failed to write full cmd"<<std::endl;
+            return false;
+        }
+        tcdrain(serialFd);
+        cmdInProgress=true;
+        return true;
+    }
+
+    std::vector<uint8_t>readResponse(int timeoutSec=5)
+    {
+        if(!isConnected())
+        {
+            std::cerr<<"serial port not connected"<<std::endl;
+            return{};
+        }
+        std::vector<uint8_t>response;
+        uint8_t buffer[256];
+        int totalBytes=0;
+        long timeoutMs=timeoutSec*1000;
+        struct timeval start_time,current_time;
+        long elapsed_ms=0;
+        gettimeofday(&start_time,NULL);
+
+        while(elapsed_ms<timeoutMs)
+        {
+            ssize_t bytesRead=read(serialFd,buffer,sizeof(buffer));
+            if(bytesRead>0)
+            {
+                for(ssize_t i=0;i<bytesRead;i++)response.push_back(buffer[i]);
+                totalBytes+=bytesRead;
+                if(totalBytes>=5)
+                {
+                    if(response[0]==slaveAddress)
+                    {
+                        if(response[1]==0x04)
+                        {
+                            if(totalBytes>=(response[2]+5))break;
+                        }
+                        else if(response[1]==0x10)
+                        {
+                            if(totalBytes>=8)break;
+                        }
+                    }
+                }
+            }
+            gettimeofday(&current_time,NULL);
+            elapsed_ms=(current_time.tv_sec-start_time.tv_sec)*1000+
+                       (current_time.tv_usec-start_time.tv_usec)/1000;
+            usleep(10000);
+        }
+        return response;
+    }
+
+    float hexToVolt(uint16_t hex)
+    {
+        float closest=-10.4f;
+        uint16_t closestHex=voltToHex[-10.4f];
+        uint16_t minDiff=std::abs(static_cast<int>(hex)-static_cast<int>(closestHex));
+        for(const auto&pair:voltToHex)
+        {
+            uint16_t diff=std::abs(static_cast<int>(hex)-static_cast<int>(pair.second));
+            if(diff<minDiff)
+            {
+                minDiff=diff;
+                closest=pair.first;
+                closestHex=pair.second;
+            }
+        }
+        if(hex!=closestHex)
+        {
+            std::pair<float,uint16_t>lower={-10.4f,0x0FFF};
+            std::pair<float,uint16_t>upper={10.4f,0x07FF};
+            for(const auto&pair:voltToHex)
+            {
+                if(pair.second<=hex&&pair.second>lower.second)lower={pair.first,pair.second};
+                if(pair.second>=hex&&pair.second<upper.second)upper={pair.first,pair.second};
+            }
+            if(upper.second!=lower.second)
+            {
+                float slope=(upper.first-lower.first)/(static_cast<float>(upper.second)-static_cast<float>(lower.second));
+                closest=lower.first+slope*(static_cast<float>(hex)-static_cast<float>(lower.second));
+            }
+        }
+        return closest;
+    }
+
+    void parseSetVoltResp(const std::vector<uint8_t>&response)
+    {
+        if(response.size()<8)
+        {
+            std::cout<<"response too short"<<std::endl;
+            return;
+        }
+        std::cout<<"set volt response: ";
+        for(const auto&byte:response)std::cout<<std::hex<<std::setfill('0')<<std::setw(2)<<static_cast<int>(byte)<<" ";
+        std::cout<<std::dec<<std::endl;
+
+        if(response[0]!=slaveAddress)
+        {
+            std::cout<<"wrong slave addr: "<<static_cast<int>(response[0])<<std::endl;
+            return;
+        }
+        if(response[1]!=0x10)
+        {
+            std::cout<<"wrong func code: "<<static_cast<int>(response[1])<<std::endl;
+            return;
+        }
+        uint16_t startAddr=(response[2]<<8)|response[3];
+        uint16_t numRegs=(response[4]<<8)|response[5];
+        std::cout<<"volt set result:\n";
+        std::cout<<"  slave addr: "<<static_cast<int>(response[0])<<"\n";
+        std::cout<<"  func code: 0x"<<std::hex<<static_cast<int>(response[1])<<std::dec<<"\n";
+        std::cout<<"  start addr: 0x"<<std::hex<<startAddr<<std::dec<<"\n";
+        std::cout<<"  reg count: "<<numRegs<<"\n";
+        std::cout<<"  status: volt set ok\n";
+    }
+
+    float parseReadVoltResp(const std::vector<uint8_t>&response)
+    {
+        if(response.size()<7)
+        {
+            std::cout<<"response too short"<<std::endl;
+            return 0.0f;
+        }
+        std::cout<<"read volt response: ";
+        for(const auto&byte:response)std::cout<<std::hex<<std::setfill('0')<<std::setw(2)<<static_cast<int>(byte)<<" ";
+        std::cout<<std::dec<<std::endl;
+
+        if(response[0]!=slaveAddress)
+        {
+            std::cout<<"wrong slave addr: "<<static_cast<int>(response[0])<<std::endl;
+            return 0.0f;
+        }
+        if(response[1]!=0x04)
+        {
+            std::cout<<"wrong func code: "<<static_cast<int>(response[1])<<std::endl;
+            return 0.0f;
+        }
+        uint8_t byteCount=response[2];
+        if(byteCount!=2)
+        {
+            std::cout<<"wrong byte count: "<<static_cast<int>(byteCount)<<std::endl;
+            return 0.0f;
+        }
+        uint16_t voltHex=(response[3]<<8)|response[4];
+        float volt=hexToVolt(voltHex);
+
+        std::cout<<"volt read result:\n";
+        std::cout<<"  slave addr: "<<static_cast<int>(response[0])<<"\n";
+        std::cout<<"  func code: 0x"<<std::hex<<static_cast<int>(response[1])<<std::dec<<"\n";
+        std::cout<<"  byte count: "<<static_cast<int>(byteCount)<<"\n";
+        std::cout<<"  volt hex: 0x"<<std::hex<<voltHex<<std::dec<<"\n";
+        std::cout<<"  current volt: "<<volt<<" V\n";
+        return volt;
+    }
+};
+
+int main()
+{
+    std::string serialPort="/dev/ttyUSB0";
+    uint8_t slaveAddress=0x01;
+    CDAQ1522 cdaq(serialPort,slaveAddress);
+
+    if(!cdaq.isConnected())
+    {
+        std::cerr<<"cant connect to CDAQ1522"<<std::endl;
+        return 1;
+    }
+
+    float voltage;
+    std::cout<<"enter voltage (-10.4V to +10.4V): ";
+    std::cin>>voltage;
+
+    if(voltage<-10.4f||voltage>10.4f)
+    {
+        std::cerr<<"voltage must be -10.4V to +10.4V"<<std::endl;
+        return 1;
+    }
+
+    std::cout<<"\n=== sending set volt cmd ===\n";
+    std::vector<uint8_t>setCmd=cdaq.createSetVoltCmd(voltage);
+    std::cout<<"cmd (HEX): ";
+    for(const auto&byte:setCmd)std::cout<<std::hex<<std::setfill('0')<<std::setw(2)<<static_cast<int>(byte)<<" ";
+    std::cout<<std::dec<<std::endl;
+
+    if(!cdaq.sendCmd(setCmd))
+    {
+        std::cerr<<"cmd send failed"<<std::endl;
+        return 1;
+    }
+    std::cout<<"cmd sent, processing in background...\n";
+
+    std::cout<<"\n=== sending read volt cmd ===\n";
+    std::vector<uint8_t>readCmd=cdaq.createReadVoltCmd();
+    std::cout<<"cmd (HEX): ";
+    for(const auto&byte:readCmd)std::cout<<std::hex<<std::setfill('0')<<std::setw(2)<<static_cast<int>(byte)<<" ";
+    std::cout<<std::dec<<std::endl;
+
+    if(!cdaq.sendCmd(readCmd))
+    {
+        std::cerr<<"cmd send failed"<<std::endl;
+        return 1;
+    }
+    std::cout<<"cmd sent, processing in background...\n";
+
+    while(cdaq.isCmdInProgress())
+    {
+        std::cout<<"waiting for all cmds to finish...\n";
+        usleep(500000);
+    }
+
+    std::cout<<"\n=== program ending ===\n";
+    return 0;
+}

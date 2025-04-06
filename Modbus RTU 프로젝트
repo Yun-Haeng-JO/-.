@@ -36,7 +36,7 @@ private:
             
             for(int j = 0; j < 8; j++) 
             {
-                if (crc & 0x0001) 
+                if(crc & 0x0001) 
                 {
                     crc = (crc >> 1) ^ 0xA001;
                 } 
@@ -70,7 +70,7 @@ private:
                 printf("Data read: %d bytes, Insert byte: %02X\n", num_bytes, insert_buf);
                 
                 // 버퍼 업데이트 - #define 상수 사용
-                for (int i = 0; i < READ_BUFFER_SIZE - 1; i++) 
+                for(int i = 0; i < READ_BUFFER_SIZE - 1; i++) 
                 {
                     read_buf[i] = read_buf[i + 1];
                 }
@@ -145,7 +145,7 @@ public:
         cfsetispeed(&tty, baudrate);
         cfsetospeed(&tty, baudrate);
         
-        if (tcsetattr(uart_fd, TCSANOW, &tty) != 0) 
+        if(tcsetattr(uart_fd, TCSANOW, &tty) != 0) 
 	{
             printf("Error %i from tcsetattr: %s\n", errno, strerror(errno));
             close();
@@ -158,13 +158,13 @@ public:
     // 읽기 스레드 시작
     bool startReadThread() 
     {
-        if (uart_fd < 0) {
+        if(uart_fd < 0) {
             printf("Serial port not initialized\n");
             return false;
         }
         
         running = true;
-        if (pthread_create(&read_thread, NULL, readThreadWrapper, this) != 0) 
+        if(pthread_create(&read_thread, NULL, readThreadWrapper, this) != 0) 
         {
             printf("Failed to create read thread\n");
             running = false;
@@ -177,7 +177,7 @@ public:
     // 데이터 쓰기
     int write(const unsigned char* data, int length) 
     {
-        if (uart_fd < 0) 
+        if(uart_fd < 0) 
 	{
             return -1;
         }
@@ -188,13 +188,13 @@ public:
     // 포트 닫기 및 스레드 정리
     void close() 
     {
-        if (running) 
+        if(running) 
         {
             running = false;
             pthread_join(read_thread, NULL);
         }
         
-        if (uart_fd >= 0) 
+        if(uart_fd >= 0) 
         {
             ::close(uart_fd);
             uart_fd = -1;
@@ -214,14 +214,14 @@ int main()
     ModbusRTU_CDAQ1522 modbus("/dev/ttyUSB0", B115200);
     
     // 시리얼 포트 초기화
-    if (!modbus.init())
+    if(!modbus.init())
     {
         printf("Failed to initialize ModbusRTU_CDAQ1522\n");
         return -1;
     }
     
     // 읽기 스레드 시작
-    if (!modbus.startReadThread())
+    if(!modbus.startReadThread())
     {
         printf("Failed to start read thread\n");
         return -1;

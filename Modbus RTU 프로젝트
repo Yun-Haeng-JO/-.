@@ -1,0 +1,241 @@
+스텝 1
+
+----------
+#include <stdio.h>
+#include <string.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <termios.h>
+#include <unistd.h>
+#include <stdint.h>
+#include <pthread.h>
+
+// 버퍼 크기 define 써서 15로 늘림
+#define READ_BUFFER_SIZE 15
+
+class ModbusRTU_CDAQ1522 
+{
+private:
+    int uart_fd;                    // 시리얼 포트 파일 디스크립터
+    pthread_t read_thread;          // 읽기 스레드
+    unsigned char read_buf[READ_BUFFER_SIZE]; // 읽기 버퍼 (#define 사용)
+    bool running;                   // 스레드 실행 상태
+    
+    const char* serial_device;      // 시리얼 장치 경로
+    speed_t baudrate;               // 통신 속도
+    uint8_t slave_address;          // 슬레이브 주소 (1~247)
+    
+    // CRC16 MODBUS 계산 메소드
+    static uint16_t CRC16_MODBUS(const unsigned char* data, int length) 
+    {
+        uint16_t crc = 0xFFFF;
+        
+        for(int i = 0; i < length; i++) 
+        {
+            crc ^= (uint16_t)data[i];
+            
+            for(int j = 0; j < 8; j++) 
+            {
+                if (crc & 0x0001) 
+                {
+                    crc = (crc >> 1) ^ 0xA001;
+                } 
+                else 
+                {
+                    crc = crc >> 1;
+                }
+            }
+        }
+        
+        return crc;
+    }
+    
+    // 읽기 스레드 정적 호출 함수
+    static void* readThreadWrapper(void* instance) 
+    {
+        return ((ModbusRTU_CDAQ1522*)instance)->readThreadFunction();
+    }
+    
+    // 실제 읽기 스레드 함수
+    void* readThreadFunction() 
+    {
+        int num_bytes = -1;
+        unsigned char insert_buf;
+        printf("Thread started\n");
+        
+        while (running) 
+	    {
+            while ((num_bytes = read(uart_fd, &insert_buf, 1)) > 0) 
+            {
+                printf("Data read: %d bytes, Insert byte: %02X\n", num_bytes, insert_buf);
+                
+                // 버퍼 업데이트 - #define 상수 사용
+                for (int i = 0; i < READ_BUFFER_SIZE - 1; i++) 
+                {
+                    read_buf[i] = read_buf[i + 1];
+                }
+                read_buf[READ_BUFFER_SIZE - 1] = insert_buf;
+            }
+        }
+        
+        return NULL;
+    }
+    
+public:
+    // 생성자
+    ModbusRTU_CDAQ1522(const char* device = "/dev/ttyUSB0", speed_t baud = B115200, uint8_t address = 0x01) 
+        : uart_fd(-1), running(false), serial_device(device), baudrate(baud), slave_address(address) 
+    {
+        // 버퍼 초기화
+        memset(read_buf, 0, sizeof(read_buf));
+    }
+    
+    // 소멸자
+    ~ModbusRTU_CDAQ1522() 
+    {
+        close();
+    }
+    
+    // 시리얼 포트 초기화
+    bool init() 
+    {
+        uart_fd = open(serial_device, O_RDWR);
+        if (uart_fd < 0) 
+        {
+            printf("Error %i from open: %s\n", errno, strerror(errno));
+            return false;
+        }
+        
+        struct termios tty;
+        if (tcgetattr(uart_fd, &tty) != 0) 
+        {
+            printf("Error %i from tcgetattr: %s\n", errno, strerror(errno));
+            close();
+            return false;
+        }
+        
+        // 포트 설정
+        tty.c_cflag &= ~PARENB;       // 패리티 비트 없음
+        tty.c_cflag &= ~CSTOPB;       // 1 스탑 비트
+        tty.c_cflag &= ~CSIZE;        // 비트 마스크 클리어
+        tty.c_cflag |= CS8;           // 8 비트
+        tty.c_cflag &= ~CRTSCTS;      // 하드웨어 흐름 제어 없음
+        tty.c_cflag |= CREAD | CLOCAL; // 수신 가능 및 모뎀 상태 무시
+        
+        // 로컬 모드 설정
+        tty.c_lflag &= ~ICANON;       // 정규 모드 비활성화
+        tty.c_lflag &= ~ECHO;         // 에코 비활성화
+        tty.c_lflag &= ~ECHOE;        // 에러 문자 비활성화
+        tty.c_lflag &= ~ECHONL;       // 뉴라인 에코 비활성화
+        tty.c_lflag &= ~ISIG;         // 인터럽트 신호 비활성화
+        
+        // 입력 모드 설정
+        tty.c_iflag &= ~(IXON | IXOFF | IXANY); // 소프트웨어 흐름 제어 비활성화
+        tty.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL); // 특수 문자 처리 비활성화
+        
+        // 출력 모드 설정
+        tty.c_oflag &= ~OPOST;        // 출력 처리 비활성화
+        tty.c_oflag &= ~ONLCR;        // 개행 변환 비활성화
+        
+        // 타임아웃 설정
+        tty.c_cc[VTIME] = 100;        // 10초 타임아웃
+        tty.c_cc[VMIN] = 0;           // 최소 읽기 바이트 없음
+        
+        // 속도 설정
+        cfsetispeed(&tty, baudrate);
+        cfsetospeed(&tty, baudrate);
+        
+        if (tcsetattr(uart_fd, TCSANOW, &tty) != 0) 
+	{
+            printf("Error %i from tcsetattr: %s\n", errno, strerror(errno));
+            close();
+            return false;
+        }
+        
+        return true;
+    }
+    
+    // 읽기 스레드 시작
+    bool startReadThread() 
+    {
+        if (uart_fd < 0) {
+            printf("Serial port not initialized\n");
+            return false;
+        }
+        
+        running = true;
+        if (pthread_create(&read_thread, NULL, readThreadWrapper, this) != 0) 
+        {
+            printf("Failed to create read thread\n");
+            running = false;
+            return false;
+        }
+        
+        return true;
+    }
+    
+    // 데이터 쓰기
+    int write(const unsigned char* data, int length) 
+    {
+        if (uart_fd < 0) 
+	{
+            return -1;
+        }
+        
+        return ::write(uart_fd, data, length);
+    }
+    
+    // 포트 닫기 및 스레드 정리
+    void close() 
+    {
+        if (running) 
+        {
+            running = false;
+            pthread_join(read_thread, NULL);
+        }
+        
+        if (uart_fd >= 0) 
+        {
+            ::close(uart_fd);
+            uart_fd = -1;
+        }
+    }
+    
+    // 현재 읽기 버퍼 얻기
+    const unsigned char* getReadBuffer() const 
+    {
+        return read_buf;
+    }
+};
+
+int main()
+{
+    // ModbusRTU_CDAQ1522 인스턴스 생성
+    ModbusRTU_CDAQ1522 modbus("/dev/ttyUSB0", B115200);
+    
+    // 시리얼 포트 초기화
+    if (!modbus.init())
+    {
+        printf("Failed to initialize ModbusRTU_CDAQ1522\n");
+        return -1;
+    }
+    
+    // 읽기 스레드 시작
+    if (!modbus.startReadThread())
+    {
+        printf("Failed to start read thread\n");
+        return -1;
+    }
+    
+    printf("ModbusRTU_CDAQ1522 initialized and read thread started. Running main loop...\n");
+    
+    // 메인 루프에서 지속적인 처리
+    while (1)
+    {
+        // 루프는 비어 있음 - 모든 통신 처리는 백그라운드 스레드에서 발생
+        // 과도한 CPU 사용률 방지를 위한 짧은 슬립
+        usleep(10000); // 10ms
+    }
+    
+    return 0;
+}
